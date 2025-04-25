@@ -231,7 +231,7 @@ class FingerprintGeneratorDataset(Dataset):
             'subject_id': subject_id     # subject ID
         }
 
-def train_fingerprint_generator(data_dir, batch_size=8, epochs=15, learning_rate=0.0005, 
+def train_fingerprint_generator(data_dir, batch_size=8, epochs=30, learning_rate=0.0005, 
                                img_size=96, model_save_path='models/fingerprint_generator.pth',
                                target_finger=None, patience=5):
     """
@@ -473,11 +473,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='训练指纹生成模型')
     parser.add_argument('--data_dir', type=str, default='dataset/SOCOFing_Real/', help='数据集路径')
     parser.add_argument('--batch_size', type=int, default=8, help='批次大小')
-    parser.add_argument('--epochs', type=int, default=15, help='训练轮数')
+    parser.add_argument('--epochs', type=int, default=30, help='训练轮数')
     parser.add_argument('--lr', type=float, default=0.0005, help='学习率')
     parser.add_argument('--img_size', type=int, default=96, help='图像大小')
     parser.add_argument('--target_finger', type=int, default=None, help='目标手指索引 (0-9)，为None则随机')
-    parser.add_argument('--patience', type=int, default=10, help='早停机制的耐心参数')
+    parser.add_argument('--patience', type=int, default=5, help='早停机制的耐心参数')
     
     args = parser.parse_args()
     

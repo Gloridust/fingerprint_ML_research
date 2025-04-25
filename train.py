@@ -22,7 +22,7 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = False  # 改为False以提高速度
     torch.backends.cudnn.benchmark = True  # 启用基准测试以提高速度
 
-def train_finger_classifier(data_dir, batch_size=256, epochs=15, learning_rate=0.001, 
+def train_finger_classifier(data_dir, batch_size=256, epochs=30, learning_rate=0.001, 
                             img_size=96, model_save_path='models/finger_classifier.pth', 
                             use_resnet=False, patience=5):  # 添加耐心参数
     """
@@ -265,7 +265,7 @@ def train_finger_classifier(data_dir, batch_size=256, epochs=15, learning_rate=0
     
     return model, (train_losses, val_losses, train_accs, val_accs)
 
-def train_gender_classifier(data_dir, batch_size=256, epochs=15, learning_rate=0.001, 
+def train_gender_classifier(data_dir, batch_size=256, epochs=30, learning_rate=0.001, 
                             img_size=96, model_save_path='models/gender_classifier.pth',
                             patience=5):  # 添加耐心参数
     """
@@ -569,7 +569,7 @@ def create_pairs_for_siamese(data_loader, num_pairs=1000, same_person_ratio=0.5)
     
     return pairs, labels
 
-def train_siamese_network(data_dir, batch_size=256, epochs=15, learning_rate=0.001, 
+def train_siamese_network(data_dir, batch_size=256, epochs=30, learning_rate=0.001, 
                           img_size=96, model_save_path='models/siamese_network.pth',
                           num_train_pairs=2000, num_val_pairs=500, num_test_pairs=1000,
                           patience=5):  # 添加耐心参数
@@ -843,11 +843,11 @@ if __name__ == '__main__':
     parser.add_argument('--task', type=str, choices=['finger', 'gender', 'siamese', 'all'], default='all', 
                         help='Which task to train')
     parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
-    parser.add_argument('--epochs', type=int, default=50, help='Number of epochs')
+    parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--img_size', type=int, default=224, help='Image size')
     parser.add_argument('--use_resnet', action='store_true', default=True, help='Use ResNet model for finger classification')
-    parser.add_argument('--patience', type=int, default=10, help='Early stopping patience')
+    parser.add_argument('--patience', type=int, default=5, help='Early stopping patience')
     
     args = parser.parse_args()
     
