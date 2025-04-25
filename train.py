@@ -9,6 +9,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import matplotlib.pyplot as plt
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 import seaborn as sns
+from torch.amp import autocast, GradScaler  # 更新混合精度训练导入
 
 from data_loader import get_data_loaders
 from models import FingerCNN, GenderCNN, SiameseNetwork, ResNet18Fingerprint
@@ -18,10 +19,10 @@ def set_seed(seed=42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = False  # 改为False以提高速度
+    torch.backends.cudnn.benchmark = True  # 启用基准测试以提高速度
 
-def train_finger_classifier(data_dir, batch_size=32, epochs=50, learning_rate=0.001, 
+def train_finger_classifier(data_dir, batch_size=256, epochs=50, learning_rate=0.001, 
                             img_size=96, model_save_path='models/finger_classifier.pth', 
                             use_resnet=False):
     """
@@ -51,6 +52,9 @@ def train_finger_classifier(data_dir, batch_size=32, epochs=50, learning_rate=0.
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
     
+    # 添加混合精度训练的scaler
+    scaler = GradScaler()
+    
     # 5. 训练模型
     train_losses = []
     val_losses = []
@@ -60,14 +64,21 @@ def train_finger_classifier(data_dir, batch_size=32, epochs=50, learning_rate=0.
     
     print(f"Starting training for {epochs} epochs...")
     
+    # 添加训练速度监控
+    start_time = time.time()
+    batch_times = []
+    
     for epoch in range(epochs):
         # 训练阶段
         model.train()
         epoch_train_loss = 0
         train_preds = []
         train_targets = []
+        epoch_start = time.time()
         
-        for images, labels_dict in train_loader:
+        for i, (images, labels_dict) in enumerate(train_loader):
+            batch_start = time.time()
+            
             images = images.to(device)
             # 处理标签 - 修复了这里的bug
             # 检查labels_dict的类型并相应地处理
@@ -77,26 +88,42 @@ def train_finger_classifier(data_dir, batch_size=32, epochs=50, learning_rate=0.
                 # 如果是Subset数据集,则可能直接返回tensor
                 finger_labels = labels_dict['finger_label'].to(device) if isinstance(labels_dict, dict) else labels_dict.to(device)
             
-            # 前向传播
-            outputs = model(images)
-            loss = criterion(outputs, finger_labels)
+            # 前向传播 - 使用混合精度
+            with autocast(device_type='cuda'):
+                outputs = model(images)
+                loss = criterion(outputs, finger_labels)
             
-            # 反向传播和优化
+            # 反向传播和优化 - 使用混合精度
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             
             # 记录损失和预测结果
             epoch_train_loss += loss.item()
             _, predicted = torch.max(outputs.data, 1)
             train_preds.extend(predicted.cpu().numpy())
             train_targets.extend(finger_labels.cpu().numpy())
+            
+            # 记录批次时间
+            batch_end = time.time()
+            batch_time = batch_end - batch_start
+            batch_times.append(batch_time)
+            
+            # 每10个批次打印一次进度和GPU使用情况
+            if (i + 1) % 10 == 0:
+                images_per_sec = images.shape[0] / batch_time
+                print(f"  Batch {i+1}/{len(train_loader)}: {images_per_sec:.2f} imgs/sec, batch time: {batch_time:.3f}s")
+                if torch.cuda.is_available():
+                    print(f"  GPU Memory: {torch.cuda.memory_allocated() / 1e9:.2f}GB / {torch.cuda.memory_reserved() / 1e9:.2f}GB")
         
         # 计算平均损失和准确率
         epoch_train_loss /= len(train_loader)
         train_acc = accuracy_score(train_targets, train_preds)
         train_losses.append(epoch_train_loss)
         train_accs.append(train_acc)
+        
+        epoch_time = time.time() - epoch_start
         
         # 验证阶段
         model.eval()
@@ -114,9 +141,10 @@ def train_finger_classifier(data_dir, batch_size=32, epochs=50, learning_rate=0.
                     # 如果是Subset数据集,则可能直接返回tensor
                     finger_labels = labels_dict['finger_label'].to(device) if isinstance(labels_dict, dict) else labels_dict.to(device)
                 
-                # 前向传播
-                outputs = model(images)
-                loss = criterion(outputs, finger_labels)
+                # 前向传播 - 也使用混合精度
+                with autocast(device_type='cuda'):
+                    outputs = model(images)
+                    loss = criterion(outputs, finger_labels)
                 
                 # 记录损失和预测结果
                 epoch_val_loss += loss.item()
@@ -223,7 +251,7 @@ def train_finger_classifier(data_dir, batch_size=32, epochs=50, learning_rate=0.
     
     return model, (train_losses, val_losses, train_accs, val_accs)
 
-def train_gender_classifier(data_dir, batch_size=32, epochs=30, learning_rate=0.001, 
+def train_gender_classifier(data_dir, batch_size=128, epochs=30, learning_rate=0.001, 
                             img_size=96, model_save_path='models/gender_classifier.pth'):
     """
     训练用于性别分类的模型（任务4）
@@ -553,6 +581,10 @@ def train_siamese_network(data_dir, batch_size=32, epochs=30, learning_rate=0.00
     
     print(f"Starting training for {epochs} epochs...")
     
+    # 添加训练速度监控
+    start_time = time.time()
+    batch_times = []
+    
     for epoch in range(epochs):
         # 训练阶段
         model.train()
@@ -584,6 +616,18 @@ def train_siamese_network(data_dir, batch_size=32, epochs=30, learning_rate=0.00
             epoch_train_loss += loss.item() * len(batch_indices)
             predicted = (torch.sigmoid(outputs) > 0.5).float()
             train_preds.extend([(predicted[j].item(), batch_labels[j].item()) for j in range(len(predicted))])
+            
+            # 记录批次时间
+            batch_end = time.time()
+            batch_time = batch_end - batch_start
+            batch_times.append(batch_time)
+            
+            # 每10个批次打印一次进度和GPU使用情况
+            if (i + 1) % 10 == 0:
+                images_per_sec = (len(batch_indices) * 2) / batch_time
+                print(f"  Batch {i+1}/{len(train_pairs)}: {images_per_sec:.2f} imgs/sec, batch time: {batch_time:.3f}s")
+                if torch.cuda.is_available():
+                    print(f"  GPU Memory: {torch.cuda.memory_allocated() / 1e9:.2f}GB / {torch.cuda.memory_reserved() / 1e9:.2f}GB")
         
         # 计算平均损失和准确率
         epoch_train_loss /= len(train_pairs)
@@ -754,11 +798,11 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', type=str, default='dataset/SOCOFing_Real/', help='Path to the dataset')
     parser.add_argument('--task', type=str, choices=['finger', 'gender', 'siamese', 'all'], default='all', 
                         help='Which task to train')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
+    parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
     parser.add_argument('--epochs', type=int, default=50, help='Number of epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
-    parser.add_argument('--img_size', type=int, default=96, help='Image size')
-    parser.add_argument('--use_resnet', action='store_true', help='Use ResNet model for finger classification')
+    parser.add_argument('--img_size', type=int, default=224, help='Image size')
+    parser.add_argument('--use_resnet', action='store_true', default=True, help='Use ResNet model for finger classification')
     
     args = parser.parse_args()
     

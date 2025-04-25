@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
 from skimage.metrics import structural_similarity as ssim
 import cv2
+from torch.amp import autocast, GradScaler  # 更新混合精度训练导入
 
 from data_loader import get_data_loaders
 from models import FingerCNN  # 我们将使用部分预训练的手指识别模型特征
@@ -34,22 +35,22 @@ class FingerprintEncoderDecoder(nn.Module):
         # Encoder - 处理9个指纹图像，每个图像单独编码
         self.encoder_conv = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(16),
+            nn.BatchNorm2d(16, momentum=0.9),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),  # -> 48x48
             
             nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(32),
+            nn.BatchNorm2d(32, momentum=0.9),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),  # -> 24x24
             
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
+            nn.BatchNorm2d(64, momentum=0.9),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),  # -> 12x12
             
             nn.Conv2d(64, feature_dim, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(feature_dim),
+            nn.BatchNorm2d(feature_dim, momentum=0.9),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2)  # -> 6x6
         )
@@ -276,6 +277,9 @@ def train_fingerprint_generator(data_dir, batch_size=8, epochs=50, learning_rate
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
     
+    # 添加混合精度训练的scaler
+    scaler = GradScaler()
+    
     # 6. 训练模型
     train_losses = []
     val_losses = []
@@ -293,14 +297,16 @@ def train_fingerprint_generator(data_dir, batch_size=8, epochs=50, learning_rate
             target_img = batch['target_img'].to(device)
             target_idx = batch['target_idx'].to(device)
             
-            # 前向传播
-            output = model(input_imgs, target_idx)
-            loss = criterion(output, target_img)
+            # 前向传播 - 使用混合精度
+            with autocast(device_type='cuda'):
+                output = model(input_imgs, target_idx)
+                loss = criterion(output, target_img)
             
-            # 反向传播和优化
+            # 反向传播和优化 - 使用混合精度
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             
             epoch_train_loss += loss.item()
         
@@ -318,9 +324,10 @@ def train_fingerprint_generator(data_dir, batch_size=8, epochs=50, learning_rate
                 target_img = batch['target_img'].to(device)
                 target_idx = batch['target_idx'].to(device)
                 
-                # 前向传播
-                output = model(input_imgs, target_idx)
-                loss = criterion(output, target_img)
+                # 前向传播 - 使用混合精度
+                with autocast(device_type='cuda'):
+                    output = model(input_imgs, target_idx)
+                    loss = criterion(output, target_img)
                 
                 epoch_val_loss += loss.item()
         

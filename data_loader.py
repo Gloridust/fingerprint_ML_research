@@ -94,15 +94,23 @@ def get_data_loaders(data_dir, batch_size=32, test_size=0.15, val_size=0.15, img
     加载数据，按 Subject ID 划分数据集，并创建 DataLoader。
     """
     # 定义图像转换
-    transform = transforms.Compose([
+    train_transform = transforms.Compose([
         transforms.ToPILImage(), # cv2 读取的是 numpy array, 先转 PIL
         transforms.Resize((img_size, img_size)),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
+        transforms.RandomAffine(degrees=0, translate=(0.05, 0.05)),
+        transforms.RandomAutocontrast(p=0.3),
         transforms.ToTensor(), # 会自动将灰度 PIL (H, W) -> Tensor (1, H, W) 并归一化到 [0, 1]
-        # 可以添加 Normalize，如果模型需要的话 (通常使用 ImageNet 均值/标准差，但灰度图可能不同)
-        # transforms.Normalize(mean=[0.5], std=[0.5]) # 示例归一化到 [-1, 1]
+    ])
+    
+    test_transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((img_size, img_size)),
+        transforms.ToTensor(),
     ])
 
-    full_dataset = FingerprintDataset(data_dir, transform=transform)
+    full_dataset = FingerprintDataset(data_dir, transform=None)  # 先创建不带转换的数据集
 
     # 按 Subject ID 划分
     subject_ids = list(set(label['subject_id'] for label in full_dataset.labels))
@@ -122,16 +130,21 @@ def get_data_loaders(data_dir, batch_size=32, test_size=0.15, val_size=0.15, img
     print(f"Train subjects: {len(train_ids)} ({len(train_indices)} images)")
     print(f"Validation subjects: {len(val_ids)} ({len(val_indices)} images)")
     print(f"Test subjects: {len(test_ids)} ({len(test_indices)} images)")
+    
+    # 创建不同变换版本的数据集
+    full_dataset_train = FingerprintDataset(data_dir, transform=train_transform)
+    full_dataset_val = FingerprintDataset(data_dir, transform=test_transform)
+    full_dataset_test = FingerprintDataset(data_dir, transform=test_transform)
 
     # 创建自定义Subset
-    train_dataset = SubsetWithLabels(full_dataset, train_indices)
-    val_dataset = SubsetWithLabels(full_dataset, val_indices)
-    test_dataset = SubsetWithLabels(full_dataset, test_indices)
+    train_dataset = SubsetWithLabels(full_dataset_train, train_indices)
+    val_dataset = SubsetWithLabels(full_dataset_val, val_indices)
+    test_dataset = SubsetWithLabels(full_dataset_test, test_indices)
 
     # 创建 DataLoader
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
 
     return train_loader, val_loader, test_loader
 
