@@ -22,9 +22,9 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = False  # 改为False以提高速度
     torch.backends.cudnn.benchmark = True  # 启用基准测试以提高速度
 
-def train_finger_classifier(data_dir, batch_size=256, epochs=50, learning_rate=0.001, 
+def train_finger_classifier(data_dir, batch_size=256, epochs=15, learning_rate=0.001, 
                             img_size=96, model_save_path='models/finger_classifier.pth', 
-                            use_resnet=False):
+                            use_resnet=False, patience=5):  # 添加耐心参数
     """
     训练用于手指分类的模型（任务3）
     """
@@ -61,6 +61,9 @@ def train_finger_classifier(data_dir, batch_size=256, epochs=50, learning_rate=0
     train_accs = []
     val_accs = []
     best_val_loss = float('inf')
+    
+    # 早停相关变量
+    early_stopping_counter = 0
     
     print(f"Starting training for {epochs} epochs...")
     
@@ -175,6 +178,17 @@ def train_finger_classifier(data_dir, batch_size=256, epochs=50, learning_rate=0
             os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
             torch.save(model.state_dict(), model_save_path)
             print(f"Model saved to {model_save_path}")
+            # 重置早停计数器
+            early_stopping_counter = 0
+        else:
+            # 如果验证损失没有改善，增加计数器
+            early_stopping_counter += 1
+            print(f"Early stopping counter: {early_stopping_counter}/{patience}")
+        
+        # 检查早停条件
+        if early_stopping_counter >= patience:
+            print(f"Early stopping triggered after {epoch+1} epochs")
+            break
     
     # 6. 在测试集上评估最佳模型
     print("\nEvaluating on test set...")
@@ -251,8 +265,9 @@ def train_finger_classifier(data_dir, batch_size=256, epochs=50, learning_rate=0
     
     return model, (train_losses, val_losses, train_accs, val_accs)
 
-def train_gender_classifier(data_dir, batch_size=128, epochs=30, learning_rate=0.001, 
-                            img_size=96, model_save_path='models/gender_classifier.pth'):
+def train_gender_classifier(data_dir, batch_size=256, epochs=15, learning_rate=0.001, 
+                            img_size=96, model_save_path='models/gender_classifier.pth',
+                            patience=5):  # 添加耐心参数
     """
     训练用于性别分类的模型（任务4）
     """
@@ -280,6 +295,9 @@ def train_gender_classifier(data_dir, batch_size=128, epochs=30, learning_rate=0
     train_accs = []
     val_accs = []
     best_val_loss = float('inf')
+    
+    # 早停相关变量
+    early_stopping_counter = 0
     
     print(f"Starting training for {epochs} epochs...")
     
@@ -369,6 +387,17 @@ def train_gender_classifier(data_dir, batch_size=128, epochs=30, learning_rate=0
             os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
             torch.save(model.state_dict(), model_save_path)
             print(f"Model saved to {model_save_path}")
+            # 重置早停计数器
+            early_stopping_counter = 0
+        else:
+            # 如果验证损失没有改善，增加计数器
+            early_stopping_counter += 1
+            print(f"Early stopping counter: {early_stopping_counter}/{patience}")
+        
+        # 检查早停条件
+        if early_stopping_counter >= patience:
+            print(f"Early stopping triggered after {epoch+1} epochs")
+            break
     
     # 6. 在测试集上评估最佳模型
     print("\nEvaluating on test set...")
@@ -540,9 +569,10 @@ def create_pairs_for_siamese(data_loader, num_pairs=1000, same_person_ratio=0.5)
     
     return pairs, labels
 
-def train_siamese_network(data_dir, batch_size=32, epochs=30, learning_rate=0.001, 
+def train_siamese_network(data_dir, batch_size=256, epochs=15, learning_rate=0.001, 
                           img_size=96, model_save_path='models/siamese_network.pth',
-                          num_train_pairs=2000, num_val_pairs=500, num_test_pairs=1000):
+                          num_train_pairs=2000, num_val_pairs=500, num_test_pairs=1000,
+                          patience=5):  # 添加耐心参数
     """
     训练用于指纹验证的孪生网络（任务2）
     """
@@ -578,6 +608,9 @@ def train_siamese_network(data_dir, batch_size=32, epochs=30, learning_rate=0.00
     train_accs = []
     val_accs = []
     best_val_loss = float('inf')
+    
+    # 早停相关变量
+    early_stopping_counter = 0
     
     print(f"Starting training for {epochs} epochs...")
     
@@ -683,6 +716,17 @@ def train_siamese_network(data_dir, batch_size=32, epochs=30, learning_rate=0.00
             os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
             torch.save(model.state_dict(), model_save_path)
             print(f"Model saved to {model_save_path}")
+            # 重置早停计数器
+            early_stopping_counter = 0
+        else:
+            # 如果验证损失没有改善，增加计数器
+            early_stopping_counter += 1
+            print(f"Early stopping counter: {early_stopping_counter}/{patience}")
+        
+        # 检查早停条件
+        if early_stopping_counter >= patience:
+            print(f"Early stopping triggered after {epoch+1} epochs")
+            break
     
     # 7. 在测试集上评估最佳模型
     print("\nEvaluating on test set...")
@@ -803,6 +847,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--img_size', type=int, default=224, help='Image size')
     parser.add_argument('--use_resnet', action='store_true', default=True, help='Use ResNet model for finger classification')
+    parser.add_argument('--patience', type=int, default=10, help='Early stopping patience')
     
     args = parser.parse_args()
     
@@ -816,7 +861,8 @@ if __name__ == '__main__':
             epochs=args.epochs,
             learning_rate=args.lr,
             img_size=args.img_size,
-            use_resnet=args.use_resnet
+            use_resnet=args.use_resnet,
+            patience=args.patience
         )
     
     if args.task == 'gender' or args.task == 'all':
@@ -828,7 +874,8 @@ if __name__ == '__main__':
             batch_size=args.batch_size,
             epochs=args.epochs,
             learning_rate=args.lr,
-            img_size=args.img_size
+            img_size=args.img_size,
+            patience=args.patience
         )
     
     if args.task == 'siamese' or args.task == 'all':
@@ -840,5 +887,6 @@ if __name__ == '__main__':
             batch_size=args.batch_size,
             epochs=args.epochs,
             learning_rate=args.lr,
-            img_size=args.img_size
+            img_size=args.img_size,
+            patience=args.patience
         ) 

@@ -231,9 +231,9 @@ class FingerprintGeneratorDataset(Dataset):
             'subject_id': subject_id     # subject ID
         }
 
-def train_fingerprint_generator(data_dir, batch_size=8, epochs=50, learning_rate=0.0005, 
+def train_fingerprint_generator(data_dir, batch_size=8, epochs=15, learning_rate=0.0005, 
                                img_size=96, model_save_path='models/fingerprint_generator.pth',
-                               target_finger=None):
+                               target_finger=None, patience=5):
     """
     训练指纹生成模型
     
@@ -245,6 +245,7 @@ def train_fingerprint_generator(data_dir, batch_size=8, epochs=50, learning_rate
         img_size: 图像大小
         model_save_path: 模型保存路径
         target_finger: 特定目标手指索引。如果为None，则随机生成不同手指
+        patience: 早停机制的耐心参数
     """
     # 1. 设置设备
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -284,6 +285,9 @@ def train_fingerprint_generator(data_dir, batch_size=8, epochs=50, learning_rate
     train_losses = []
     val_losses = []
     best_val_loss = float('inf')
+    
+    # 早停相关变量
+    early_stopping_counter = 0
     
     print(f"开始训练，共{epochs}轮...")
     
@@ -349,6 +353,17 @@ def train_fingerprint_generator(data_dir, batch_size=8, epochs=50, learning_rate
             os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
             torch.save(model.state_dict(), model_save_path)
             print(f"模型已保存到 {model_save_path}")
+            # 重置早停计数器
+            early_stopping_counter = 0
+        else:
+            # 如果验证损失没有改善，增加计数器
+            early_stopping_counter += 1
+            print(f"早停计数器: {early_stopping_counter}/{patience}")
+        
+        # 检查早停条件
+        if early_stopping_counter >= patience:
+            print(f"早停机制触发，停止训练。当前轮次: {epoch+1}")
+            break
     
     # 7. 在测试集上评估最佳模型
     print("\n在测试集上评估...")
@@ -458,10 +473,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='训练指纹生成模型')
     parser.add_argument('--data_dir', type=str, default='dataset/SOCOFing_Real/', help='数据集路径')
     parser.add_argument('--batch_size', type=int, default=8, help='批次大小')
-    parser.add_argument('--epochs', type=int, default=50, help='训练轮数')
+    parser.add_argument('--epochs', type=int, default=15, help='训练轮数')
     parser.add_argument('--lr', type=float, default=0.0005, help='学习率')
     parser.add_argument('--img_size', type=int, default=96, help='图像大小')
     parser.add_argument('--target_finger', type=int, default=None, help='目标手指索引 (0-9)，为None则随机')
+    parser.add_argument('--patience', type=int, default=10, help='早停机制的耐心参数')
     
     args = parser.parse_args()
     
@@ -476,5 +492,6 @@ if __name__ == '__main__':
         epochs=args.epochs,
         learning_rate=args.lr,
         img_size=args.img_size,
-        target_finger=args.target_finger
+        target_finger=args.target_finger,
+        patience=args.patience
     ) 

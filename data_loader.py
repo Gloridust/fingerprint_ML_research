@@ -89,7 +89,7 @@ class SubsetWithLabels(Subset):
         image, label_dict = self.dataset[self.indices[idx]]
         return image, label_dict
 
-def get_data_loaders(data_dir, batch_size=32, test_size=0.15, val_size=0.15, img_size=96, random_state=42):
+def get_data_loaders(data_dir, batch_size=256, test_size=0.15, val_size=0.15, img_size=96, random_state=42):
     """
     加载数据，按 Subject ID 划分数据集，并创建 DataLoader。
     """
