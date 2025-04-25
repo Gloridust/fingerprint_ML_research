@@ -267,7 +267,7 @@ def train_finger_classifier(data_dir, batch_size=256, epochs=30, learning_rate=0
 
 def train_gender_classifier(data_dir, batch_size=256, epochs=30, learning_rate=0.001, 
                             img_size=96, model_save_path='models/gender_classifier.pth',
-                            patience=5):  # 添加耐心参数
+                            patience=5):  # 修改默认耐心值
     """
     训练用于性别分类的模型（任务4）
     """
@@ -288,6 +288,9 @@ def train_gender_classifier(data_dir, batch_size=256, epochs=30, learning_rate=0
     criterion = nn.BCEWithLogitsLoss()  # 带有sigmoid的二分类交叉熵损失
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+    
+    # 添加混合精度训练的scaler
+    scaler = GradScaler()
     
     # 5. 训练模型
     train_losses = []
@@ -315,16 +318,21 @@ def train_gender_classifier(data_dir, batch_size=256, epochs=30, learning_rate=0
                 gender_labels = torch.tensor([label['gender_label'] for label in labels_dict], dtype=torch.float).unsqueeze(1).to(device)
             else:
                 # 如果是Subset数据集,则可能直接返回tensor或字典
-                gender_labels = labels_dict['gender_label'].unsqueeze(1).to(device) if isinstance(labels_dict, dict) else labels_dict.unsqueeze(1).to(device)
+                if isinstance(labels_dict, dict):
+                    gender_labels = labels_dict['gender_label'].clone().detach().float().unsqueeze(1).to(device)
+                else:
+                    gender_labels = labels_dict.clone().detach().float().unsqueeze(1).to(device)
             
-            # 前向传播
-            outputs = model(images)
-            loss = criterion(outputs, gender_labels)
+            # 前向传播 - 使用混合精度
+            with autocast(device_type='cuda'):
+                outputs = model(images)
+                loss = criterion(outputs, gender_labels)
             
-            # 反向传播和优化
+            # 反向传播和优化 - 使用混合精度
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             
             # 记录损失和预测结果
             epoch_train_loss += loss.item()
@@ -352,11 +360,15 @@ def train_gender_classifier(data_dir, batch_size=256, epochs=30, learning_rate=0
                     gender_labels = torch.tensor([label['gender_label'] for label in labels_dict], dtype=torch.float).unsqueeze(1).to(device)
                 else:
                     # 如果是Subset数据集,则可能直接返回tensor或字典
-                    gender_labels = labels_dict['gender_label'].unsqueeze(1).to(device) if isinstance(labels_dict, dict) else labels_dict.unsqueeze(1).to(device)
+                    if isinstance(labels_dict, dict):
+                        gender_labels = labels_dict['gender_label'].clone().detach().float().unsqueeze(1).to(device)
+                    else:
+                        gender_labels = labels_dict.clone().detach().float().unsqueeze(1).to(device)
                 
-                # 前向传播
-                outputs = model(images)
-                loss = criterion(outputs, gender_labels)
+                # 前向传播 - 也使用混合精度
+                with autocast(device_type='cuda'):
+                    outputs = model(images)
+                    loss = criterion(outputs, gender_labels)
                 
                 # 记录损失和预测结果
                 epoch_val_loss += loss.item()
@@ -417,10 +429,14 @@ def train_gender_classifier(data_dir, batch_size=256, epochs=30, learning_rate=0
                 gender_labels = torch.tensor([label['gender_label'] for label in labels_dict], dtype=torch.float).unsqueeze(1).to(device)
             else:
                 # 如果是Subset数据集,则可能直接返回tensor或字典
-                gender_labels = labels_dict['gender_label'].unsqueeze(1).to(device) if isinstance(labels_dict, dict) else labels_dict.unsqueeze(1).to(device)
+                if isinstance(labels_dict, dict):
+                    gender_labels = labels_dict['gender_label'].clone().detach().float().unsqueeze(1).to(device)
+                else:
+                    gender_labels = labels_dict.clone().detach().float().unsqueeze(1).to(device)
             
             # 前向传播
-            outputs = model(images)
+            with autocast(device_type='cuda'):
+                outputs = model(images)
             predicted = (torch.sigmoid(outputs) > 0.5).float()
             test_preds.extend(predicted.cpu().numpy())
             test_targets.extend(gender_labels.cpu().numpy())
